@@ -78,6 +78,7 @@ int aes_encrypt_evp()
     ctx = EVP_CIPHER_CTX_new();
 
     /*指定加密算法及key和iv(此处IV没有用)*/
+                      
     ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, userkey, iv);
     if(ret != 1) {
         printf("EVP_EncryptInit_ex failed\n");
