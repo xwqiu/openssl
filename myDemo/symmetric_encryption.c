@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <openssl/evp.h>
+#include <openssl/bio.h>
 
 typedef unsigned char uchar;
 
@@ -17,7 +18,9 @@ int SymmetricEncrypt(const EVP_CIPHER *cipher,            //加密函数
     EVP_CIPHER_CTX *ctx;
     ctx = EVP_CIPHER_CTX_new();
 
-    //EVP_CIPHER_CTX_set_padding(ctx, 0);
+    int padding = (len % 128 == 0 ? 0 :(128 - len % 128));
+
+    EVP_CIPHER_CTX_set_padding(ctx, padding);
 
     if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 1)){
         ERR_print_errors_fp( stderr );
@@ -46,16 +49,18 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
                                        ENGINE *impl,      //Engine
                                        const uchar * key, //加密密钥
                                        const uchar * iv,  //算法向量
-                                       const uchar *text, //明文
-                                       uchar *encrypt,    //密文
-                                       int len)           //明文长度
+                                       const uchar *text, //密文
+                                       uchar *encrypt,    //明文
+                                       int len)           //密文长度
 {
    int outl = 0;
    int tempLen = 0;
    EVP_CIPHER_CTX *ctx;
    ctx = EVP_CIPHER_CTX_new();
 
-   EVP_CIPHER_CTX_set_padding(ctx, 0);
+   int padding = (len % 128 == 0 ? 0 : (128 - len % 128));
+
+   EVP_CIPHER_CTX_set_padding(ctx, padding);
 
    if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0)){
        ERR_print_errors_fp( stderr );
@@ -71,14 +76,72 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
 
    if (!EVP_CipherFinal_ex(ctx, encrypt+outl, &tempLen)){
        //ERR_print_errors_fp( stderr );
-       printf("password error!!\n" );
+       printf("EVP_CipherFinal_ex error!!\n" );
        return -1;
    }
    outl += tempLen;
 
-   return 0;
+   return outl;
    
 }
+
+struct buf_mem_st {
+    size_t length;              /* current number of bytes */
+    char *data;
+    size_t max;                 /* size of buffer */
+    unsigned long flags;
+};
+
+//base64加密
+int Base64Encode(char *in_str, int in_len, char *out_str)
+{
+   BIO *b64, *bio;
+   BUF_MEM *bptr = NULL;
+   size_t size = 0;
+
+   if (in_str == NULL || out_str == NULL)
+       return -1;
+
+   b64 = BIO_new(BIO_f_base64());
+   bio = BIO_new(BIO_s_mem());
+   bio = BIO_push(b64, bio);
+
+   BIO_write(bio, in_str, in_len);
+   BIO_flush(bio);
+
+   BIO_get_mem_ptr(bio, &bptr);
+   memcpy(out_str, bptr->data, bptr->length);
+   out_str[bptr->length] = '\0';
+   size = bptr->length;
+
+   BIO_free_all(bio);
+   return size;
+}
+
+//base64解密
+int Base64Decode(char *in_str, int in_len, char *out_str)
+{
+    BIO *b64, *bio;
+    BUF_MEM *bptr = NULL;
+    int counts;
+    int size = 0;
+ 
+    if (in_str == NULL || out_str == NULL)
+        return -1;
+ 
+    b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+ 
+    bio = BIO_new_mem_buf(in_str, in_len);
+    bio = BIO_push(b64, bio);
+ 
+    size = BIO_read(bio, out_str, in_len);
+    out_str[size] = '\0';
+ 
+    BIO_free_all(bio);
+    return size;
+}
+
 
 /*
 加密算法
@@ -147,31 +210,68 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
 
 注： 这些加密算法函数调用时返回的都是对应EVP_CIPHER结构体指针
 */
+
+/*实现功能：文件A->对称加密->BASE64编码->存入文件B->......文件B->BASE64解码->解密->存入文件C*/
 int main(int argc, char *argv[])
 {
-    int i ;
-    int cipherNo = -1;
-    const EVP_CIPHER *cipher = EVP_bf_cbc();
-    uchar iv[] = "\x00\x00\x00\x00\x00\x00\x00\x00";
-    uchar key[64] = "1112"; //密钥
-    uchar text[] = "hello world"; //明文
-    uchar encrypt[1024];
-    uchar plain[1024] = {0};
-    int outl;
+    const EVP_CIPHER *cipher = EVP_aes_128_cbc();
+    uchar iv[32];
+    uchar key[32] = "1112"; //密钥
+    uchar cKey[32];
 
-
-    //加密
-    int clen = SymmetricEncrypt(cipher, NULL, key, iv, text, encrypt, strlen(text));
-    for (i = 0; i < clen ; i++){
-        printf("%02x", encrypt[i]);
-    }
-    printf("\n");
-
+    EVP_BytesToKey(cipher, EVP_sha1(), NULL, key, strlen(key), 1, cKey, iv);
     
-    //解密
-    SymmetricDecrypt(cipher, NULL, key, iv, encrypt, plain, clen);
-    printf("%s \n", plain);
+    int ret;
+    int clen;
+    int flen;
+    uchar inBuff[1024];
+    uchar outBuff[1024];
+    FILE *fpIn = fopen("AES.c", "rb");
+    FILE *fpOut = fopen("en.txt", "wb");
 
+    /*-----------------加密-------------------------*/
+    while(1)
+    {
+        ret = fread(inBuff, 1, 1024, fpIn);
+        if (ret <= 0)
+            break;
+        
+        //加密
+        clen = SymmetricEncrypt(cipher, NULL, cKey, iv, inBuff, outBuff, ret);
+        
+        flen = Base64Encode(inBuff, clen, outBuff);
+        fwrite(outBuff, 1, flen, fpOut);
+    }
+
+    fclose(fpIn);
+    fclose(fpOut);
+
+
+    /*-----------------解密-------------------------*/
+    fpIn = fopen("en.txt", "rb");
+    fpOut = fopen("de.txt", "wb");
+
+    uchar tempBuff[1024];
+    
+    while(1)
+    {
+        ret = fread(inBuff, 1, 1024, fpIn);
+        if (ret <= 0)
+            break;
+
+        //解码
+        flen = Base64Decode(inBuff, ret, outBuff);
+        
+        //解密
+        clen = SymmetricDecrypt(cipher, NULL, cKey, iv, outBuff, tempBuff, flen);
+
+        fwrite(tempBuff, 1, clen, fpOut);
+        
+    }
+
+    fclose(fpIn);
+    fclose(fpOut);
+    
     return 0;
 
 }
