@@ -55,7 +55,7 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
    EVP_CIPHER_CTX *ctx;
    ctx = EVP_CIPHER_CTX_new();
 
-   //EVP_CIPHER_CTX_set_padding(ctx, 0);
+   EVP_CIPHER_CTX_set_padding(ctx, 0);
 
    if (!EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, 0)){
        ERR_print_errors_fp( stderr );
@@ -76,7 +76,7 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
    }
    outl += tempLen;
 
-   return outl;
+   return 0;
    
 }
 
@@ -147,7 +147,7 @@ int SymmetricDecrypt(const EVP_CIPHER *cipher,            //加密函数
 
 注： 这些加密算法函数调用时返回的都是对应EVP_CIPHER结构体指针
 */
-int EncryptString()
+int main(int argc, char *argv[])
 {
     int i ;
     int cipherNo = -1;
@@ -174,94 +174,4 @@ int EncryptString()
 
     return 0;
 
-}
-
-int EncryptFile()
-{
-    FILE *fpIn;
-    FILE *fpOut;
-    int inl;
-    uchar in[1024];
-    uchar out[1024];
-    uchar key[EVP_MAX_KEY_LENGTH] = "1112";
-    uchar iv[] = "\x00\x00\x00\x00\x00\x00\x00\x00";
-
-    //打开待加密文件
-    fpIn = fopen("/home/xwqiu/mygithub/openssl/myDemo/ssl.txt","rb");
-
-    //打开保存密文的文件
-    fpOut = fopen("/home/xwqiu/mygithub/openssl/myDemo/ssl_en.txt","wb");
-
-
-    for(;;)
-    {
-        inl = fread(in, 1, 1024, fpIn);
-        if (inl <= 0)
-            break;
-
-        int outl = SymmetricEncrypt(EVP_des_cbc(), NULL, key, iv, in, out, inl);
-        
-        fwrite(out, 1, outl, fpOut);
-
-    }
-
-    fclose(fpIn);
-    fclose(fpOut);
-    printf("加密完成\n");
-
-    return 0;
-    
-}
-
-int DecryptFile()
-{
-    FILE *fpIn;
-    FILE *fpOut;
-    int inl;
-    uchar in[1024];
-    uchar out[1024];
-    uchar key[EVP_MAX_KEY_LENGTH];
-    //uchar key[EVP_MAX_KEY_LENGTH] = "1112";
-    uchar iv[] = "\x00\x00\x00\x00\x00\x00\x00\x00";
-
-    printf("解密密码：");
-    scanf("%s", key);
-
-    //打开待加密文件
-    fpIn = fopen("/home/xwqiu/mygithub/openssl/myDemo/ssl_en.txt","rb");
-
-    //打开保存密文的文件
-    fpOut = fopen("/home/xwqiu/mygithub/openssl/myDemo/ssl_de.txt","wb");
-
-    for(;;)
-    {
-        inl = fread(in, 1, 1024, fpIn);
-        if (inl <= 0)
-            break;
-
-        int outl = SymmetricDecrypt(EVP_des_cbc(), NULL, key, iv, in, out, inl);
-
-        if (outl == -1)
-        {
-            printf("解密失败\n");
-            return 0;
-        }
-        fwrite(out, 1, outl, fpOut);
-    }
-
-    fclose(fpIn);
-    fclose(fpOut);
-    printf("解密完成\n");
-
-    return 0;
-}
-
-
-int main()
-{
-    OpenSSL_add_all_algorithms();
-
-    EncryptFile();
-    DecryptFile();
-    return 0;
 }
